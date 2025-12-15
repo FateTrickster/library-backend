@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: library-backend
+  datasource:
+    url: jdbc:mysql://localhost:3306/school_db?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    open-in-view: false
+
+# --- 新增的部分 ---
+server:
+  error:
+    include-message: always

@@ -1,0 +1,26 @@
+### 测试登录接口 (正确密码)
+POST http://localhost:8080/user/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "123456"
+}
+
+### (可选) 测试登录接口 (错误密码)
+POST http://localhost:8080/user/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "wrong_password"
+}
+
+### 测试教师登录 (新逻辑)
+POST http://localhost:8080/teacher/login
+Content-Type: application/json
+
+{
+  "username": "13852485411",
+  "password": "010521"
+}
