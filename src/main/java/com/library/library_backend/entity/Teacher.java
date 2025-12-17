@@ -35,8 +35,8 @@ public class Teacher {
     // 6. 证书编号
     @Column(name = "teacherCert")
     private String certificateNo;
-
-    // 7. 教师等级 (注意是 Leve 不是 Level)
+    
+    // 7. 教师等级
     @Column(name = "teacherLeve")
     private String level;
 
@@ -47,4 +47,8 @@ public class Teacher {
     // 9. 证书编号后面的数字
     @Column(name = "teacherCert1")
     private String certSuffix;
+    
+    // 🔥🔥【新增】对应数据库里的 teacherSessions 字段 (期数)
+    @Column(name = "teacherSessions")
+    private String sessions; 
 }
