@@ -67,8 +67,8 @@ public class TeacherController {
     // ==========================================
     @GetMapping("/previewCertificate")
     public void previewCertificate(@RequestParam Long id, HttpServletResponse response) {
+        File file = null;
         try {
-            // 通过 ID 精准查找唯一的一条记录
             Teacher teacher = teacherRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("未找到该证书记录"));
 
@@ -89,29 +89,36 @@ public class TeacherController {
                 teacher.getCategory(),
                 teacher.getCertificateNo(), 
                 teacher.getLevel(),
-                teacher.getSessions(), // 👈 新增：传入期数 (例如 "第八期")
+                teacher.getSessions(),
                 outputPath, 
                 resourceDir
             );
             
             Process process = processBuilder.start();
             if (process.waitFor() != 0) {
-                 throw new RuntimeException("证书生成失败，请检查后台日志");
+                 throw new RuntimeException("证书生成失败");
             }
 
-            File file = new File(outputPath);
+            file = new File(outputPath);
             if (!file.exists()) throw new RuntimeException("预览文件未生成");
 
             response.setContentType("image/png");
+            
+            // 使用 try-with-resources 自动关闭流，确保文件能被删除
             try (FileInputStream in = new FileInputStream(file);
                  OutputStream out = response.getOutputStream()) {
                 in.transferTo(out);
+                out.flush();
             }
-            // file.delete(); 
 
         } catch (Exception e) {
             e.printStackTrace();
             try { response.sendError(500, "Preview Error: " + e.getMessage()); } catch (IOException ex) {}
+        } finally {
+            // 🔥 核心逻辑：不管成功失败，只要文件存在就删除
+            if (file != null && file.exists()) {
+                file.delete(); // 这一步就是“焚”
+            }
         }
     }
 
@@ -120,6 +127,7 @@ public class TeacherController {
     // ==========================================
     @GetMapping("/downloadCertificate")
     public void downloadCertificate(@RequestParam Long id, HttpServletResponse response) {
+        File file = null;
         try {
             Teacher teacher = teacherRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("未找到该证书记录"));
@@ -128,23 +136,20 @@ public class TeacherController {
             String pythonScriptPath = projectDir + "/src/python/cert_generator.py";
             String resourceDir = projectDir + "/src/python/resources/";
             
-            // 统一放在 preview_resources 目录下，保持整洁
             String outputDir = projectDir + "/src/python/preview_resources/";
             File dir = new File(outputDir);
             if (!dir.exists()) dir.mkdirs();
 
-            // 1. 服务器上的物理文件名 (用 ID + 时间戳，防止服务器内部覆盖)
             String tempFileName = "download_" + teacher.getId() + "_" + System.currentTimeMillis() + ".pdf";
             String outputPath = outputDir + tempFileName;
 
-            // 2. 调用 Python 生成
             ProcessBuilder processBuilder = new ProcessBuilder(
                 "python", pythonScriptPath,
                 teacher.getName(),
                 teacher.getCategory(),
                 teacher.getCertificateNo(),
                 teacher.getLevel(),
-                teacher.getSessions(), // 传入期数
+                teacher.getSessions(),
                 outputPath,
                 resourceDir
             );
@@ -153,29 +158,28 @@ public class TeacherController {
                 throw new RuntimeException("生成PDF失败");
             }
 
-            File file = new File(outputPath);
+            file = new File(outputPath);
             response.setContentType("application/pdf");
             
-            // 🔥🔥【核心修改】浏览器下载时的文件名
-            // 最终效果：张三_第八期_证书.pdf
-            // 做一个非空判断，防止 null
+            // 文件名带上期数
             String sessionName = (teacher.getSessions() != null) ? teacher.getSessions() : "";
             String downloadName = teacher.getName() + "_" + sessionName + "_证书.pdf";
             
-            // 使用 URLEncoder 处理中文文件名，防止乱码
             response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(downloadName, "UTF-8"));
             
-            // 3. 发送文件流给前端
             try (FileInputStream in = new FileInputStream(file);
                  OutputStream out = response.getOutputStream()) {
                 in.transferTo(out);
                 out.flush();
             }
-            
-            // ⚠️ 注意：这里去掉了 delete() 代码，文件会保留在服务器文件夹里方便检查
 
         } catch (Exception e) {
             e.printStackTrace();
+        } finally {
+            // 🔥 核心逻辑：阅后即焚
+            if (file != null && file.exists()) {
+                file.delete();
+            }
         }
     }
     
