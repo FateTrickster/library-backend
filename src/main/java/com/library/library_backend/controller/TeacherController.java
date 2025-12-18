@@ -11,6 +11,8 @@ import java.net.URLEncoder;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Semaphore; // 1. 导入这个包
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/teacher")
@@ -19,6 +21,10 @@ public class TeacherController {
 
     @Autowired
     private TeacherRepository teacherRepository;
+
+    // 🔥 2. 定义一个全局“通行证”，只允许 20 个人同时进入生成环节
+    // 如果你的服务器配置很高(8核16G)，可以改成 50；如果配置低(1核2G)，建议改 5 或 10
+    private static final Semaphore SEMAPHORE = new Semaphore(20);
 
     // ==========================================
     // 1. 登录接口 (升级版)
@@ -68,7 +74,20 @@ public class TeacherController {
     @GetMapping("/previewCertificate")
     public void previewCertificate(@RequestParam Long id, HttpServletResponse response) {
         File file = null;
+        boolean permitAcquired = false; // 标记是否拿到了通行证
+
         try {
+            // 🔥 A. 尝试获取通行证 (和下载接口共用 SEMAPHORE)
+            // 设定 15 秒超时：预览一般用户耐心较差，如果 15 秒排不到队，直接提示繁忙
+            permitAcquired = SEMAPHORE.tryAcquire(15, TimeUnit.SECONDS);
+
+            if (!permitAcquired) {
+                // 如果没抢到，抛出异常，前端会提示“预览失败”或显示繁忙
+                throw new RuntimeException("系统繁忙，生成预览需排队，请稍后再试");
+            }
+
+            // === 拿到通行证，开始干活 ===
+
             Teacher teacher = teacherRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("未找到该证书记录"));
 
@@ -104,20 +123,28 @@ public class TeacherController {
 
             response.setContentType("image/png");
             
-            // 使用 try-with-resources 自动关闭流，确保文件能被删除
+            // 发送图片流
             try (FileInputStream in = new FileInputStream(file);
                  OutputStream out = response.getOutputStream()) {
                 in.transferTo(out);
                 out.flush();
             }
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             e.printStackTrace();
-            try { response.sendError(500, "Preview Error: " + e.getMessage()); } catch (IOException ex) {}
+            // 预览接口报错时，尝试返回一个错误状态码
+            try { response.sendError(503, "Server Busy: " + e.getMessage()); } catch (IOException ex) {}
         } finally {
-            // 🔥 核心逻辑：不管成功失败，只要文件存在就删除
+            // 🔥 B. 归还通行证 (一定要还！)
+            if (permitAcquired) {
+                SEMAPHORE.release();
+            }
+
+            // 🔥 C. 阅后即焚
             if (file != null && file.exists()) {
-                file.delete(); // 这一步就是“焚”
+                file.delete();
             }
         }
     }
@@ -125,10 +152,26 @@ public class TeacherController {
     // ==========================================
     // 3. 下载证书接口 (文件名带期数 + 不删除文件)
     // ==========================================
+    // ==========================================
+    // 3. 下载证书接口 (最终抗压版：限流 + 阅后即焚)
+    // ==========================================
     @GetMapping("/downloadCertificate")
     public void downloadCertificate(@RequestParam Long id, HttpServletResponse response) {
         File file = null;
+        boolean permitAcquired = false; // 标记是否拿到了通行证
+        
         try {
+            // 🔥 A. 尝试获取通行证
+            // 如果目前已有 20 人在生成，这里会阻塞等待，直到有人释放
+            // 设置 30 秒超时，如果 30 秒还排不到队，就报错（防止永久卡死）
+            permitAcquired = SEMAPHORE.tryAcquire(30, TimeUnit.SECONDS);
+            
+            if (!permitAcquired) {
+                throw new RuntimeException("服务器繁忙，请稍后重试");
+            }
+
+            // === 拿到通行证后，才开始执行下面的重资源操作 ===
+            
             Teacher teacher = teacherRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("未找到该证书记录"));
 
@@ -161,7 +204,6 @@ public class TeacherController {
             file = new File(outputPath);
             response.setContentType("application/pdf");
             
-            // 文件名带上期数
             String sessionName = (teacher.getSessions() != null) ? teacher.getSessions() : "";
             String downloadName = teacher.getName() + "_" + sessionName + "_证书.pdf";
             
@@ -173,10 +215,19 @@ public class TeacherController {
                 out.flush();
             }
 
+        } catch (InterruptedException e) {
+            // 线程中断异常
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             e.printStackTrace();
+            // 如果是下载流错误，通常无法返回 JSON，只能记录日志
         } finally {
-            // 🔥 核心逻辑：阅后即焚
+            // 🔥 B. 归还通行证 (这一步至关重要！不还的话后面的人永远进不来)
+            if (permitAcquired) {
+                SEMAPHORE.release();
+            }
+
+            // 🔥 C. 阅后即焚
             if (file != null && file.exists()) {
                 file.delete();
             }
