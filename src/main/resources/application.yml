@@ -6,7 +6,7 @@ server:
 # 这里是开关：填写你想启用的 profile（dev 或 prod）
 spring:
   profiles:
-    active: prod  # 想用本地就填 dev，想用阿里云就填 prod
+    active: dev  # 想用本地就填 dev，想用阿里云就填 prod
 
   application:
     name: library-backend

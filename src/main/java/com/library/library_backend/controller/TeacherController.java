@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Semaphore; // 1. 导入这个包
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern; // 导入正则包
 
 @RestController
 @RequestMapping("/teacher")
@@ -26,6 +27,12 @@ public class TeacherController {
     // 如果你的服务器配置很高(8核16G)，可以改成 50；如果配置低(1核2G)，建议改 5 或 10
     private static final Semaphore SEMAPHORE = new Semaphore(20);
 
+    // 🟢 定义正则表达式常量 (预编译，提高性能)
+    // 手机号正则：1开头，后面跟10位数字
+    private static final Pattern PHONE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
+    // 身份证正则：简单的15或18位校验 (防止输入特殊字符)
+    private static final Pattern IDCARD_PATTERN = Pattern.compile("(^\\d{15}$)|(^\\d{18}$)|(^\\d{17}(\\d|X|x)$)");
+
     // ==========================================
     // 1. 登录接口 (升级版)
     // 解决“查出两条记录导致无法登录”的问题
@@ -36,22 +43,28 @@ public class TeacherController {
         String phone = loginRequest.get("username");
         String password = loginRequest.get("password"); // 身份证后六位
 
-        if (phone == null) return ResponseEntity.badRequest().body("手机号不能为空");
+        // 🛡️ 防御层 1: 非空检查
+        if (phone == null || password == null) {
+            return ResponseEntity.badRequest().body("账号或密码不能为空");
+        }
 
-        // 🔥 关键修改：调用 findAllByPhone 获取列表，而不是报错
-        List<Teacher> teachers = teacherRepository.findAllByPhone(phone.trim());
+        // 去除首尾空格并做格式校验
+        String cleanPhone = phone.trim();
+        // 🛡️ 防御层 2: 正则格式校验 (关键！)
+        if (!PHONE_PATTERN.matcher(cleanPhone).matches()) {
+            return ResponseEntity.status(500).body(Collections.singletonMap("message", "账号格式不正确或包含非法字符"));
+        }
+
+        // 只有格式干净的手机号，才允许进入数据库查询
+        List<Teacher> teachers = teacherRepository.findAllByPhone(cleanPhone);
 
         if (teachers == null || teachers.isEmpty()) {
             return ResponseEntity.status(500).body(Collections.singletonMap("message", "该手机号未注册"));
         }
 
-        // 🔥 密码验证逻辑：
-        // 因为是同一个人，理论上所有记录的密码（身份证后六位）都一样。
-        // 我们只要发现其中任意一条记录密码匹配，就允许登录。
         boolean passwordMatch = false;
         for (Teacher t : teachers) {
             String dbPwd = t.getPassword();
-            // 防止数据库里密码是 null 导致报错
             if (dbPwd != null && dbPwd.equals(password)) {
                 passwordMatch = true;
                 break;
@@ -62,8 +75,6 @@ public class TeacherController {
             return ResponseEntity.status(500).body(Collections.singletonMap("message", "密码错误"));
         }
 
-        // 登录成功！直接返回列表给前端
-        // 前端会收到类似: [{id:33, sessions:"第七期"...}, {id:315, sessions:"第八期"...}]
         return ResponseEntity.ok(teachers);
     }
 
@@ -242,15 +253,23 @@ public class TeacherController {
         String name = request.get("name");
         String idCard = request.get("idCard");
 
-        // 🔥 改动：获取列表
-        List<Teacher> teachers = teacherRepository.findByNameAndIdCard(name, idCard);
-
-        // 判断列表是否为空
-        if (teachers == null || teachers.isEmpty()) {
-            throw new RuntimeException("未找到匹配的教师信息，请检查姓名和身份证号是否正确");
+        if (name == null || idCard == null) {
+            throw new RuntimeException("输入不能为空");
+        }
+        
+        // 🛡️ 防御层：校验身份证格式
+        if (!IDCARD_PATTERN.matcher(idCard.trim()).matches()) {
+            throw new RuntimeException("身份证号码格式不正确");
         }
 
-        // 既然是同一个人，手机号肯定是一样的，取第一条即可
+        // 名字虽然难校验正则(可能有生僻字)，但 JPA 底层会处理好转义
+        // 我们只需要 trim 一下即可
+        List<Teacher> teachers = teacherRepository.findByNameAndIdCard(name.trim(), idCard.trim());
+
+        if (teachers == null || teachers.isEmpty()) {
+            throw new RuntimeException("未找到匹配的教师信息");
+        }
+
         return teachers.get(0).getPhone();
     }
 }
