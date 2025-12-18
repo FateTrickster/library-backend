@@ -1,0 +1,17 @@
+# application-prod.yml
+# 生产环境（上线）专用配置覆盖（示例）
+# 请在部署前替换为真实的生产配置，如数据库、端口、安全等
+
+server:
+  port: 8080
+
+logging:
+  level:
+    root: INFO
+
+spring:
+  datasource:
+    # 填入你截图里的 IP
+    url: jdbc:mysql://39.104.87.0:3306/school_db?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
+    username: root
+    password: root  # 截图里提到的密码

@@ -1,11 +1,17 @@
+server:
+  port: 8080
+  error:
+    include-message: always
+
+# 这里是开关：填写你想启用的 profile（dev 或 prod）
 spring:
+  profiles:
+    active: prod  # 想用本地就填 dev，想用阿里云就填 prod
+
   application:
     name: library-backend
-  datasource:
-    url: jdbc:mysql://localhost:3306/school_db?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
-    username: root
-    password: root
-    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # 下面是 JPA 等通用配置，不用动
   jpa:
     show-sql: true
     hibernate:
@@ -14,7 +20,4 @@ spring:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     open-in-view: false
 
-# --- 新增的部分 ---
-server:
-  error:
-    include-message: always
+  # 数据源放在 profile 专用文件（application-dev.yml / application-prod.yml）
