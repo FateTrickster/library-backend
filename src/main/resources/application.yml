@@ -6,7 +6,7 @@ server:
 # 这里是开关：填写你想启用的 profile（dev 或 prod）
 spring:
   profiles:
-    active: dev  # 想用本地就填 dev，想用阿里云就填 prod
+    active: prod  # 想用本地就填 dev，想用阿里云就填 prod
 
   application:
     name: library-backend
@@ -19,5 +19,3 @@ spring:
       naming:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     open-in-view: false
-
-  # 数据源放在 profile 专用文件（application-dev.yml / application-prod.yml）
