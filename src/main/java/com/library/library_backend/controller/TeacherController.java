@@ -36,17 +36,17 @@ public class TeacherController {
     private String maintenanceKey;
 
     // ==========================================
-    // 1. 登录接口 (核心接口)
-    // 功能：验证账号，返回用户信息 + OSS 图片/PDF 链接
+    // 1. 登录接口 (已修复：支持 7, 8, 9 期)
     // ==========================================
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> loginRequest) {
+        
         // 1. 维护模式校验
-        if (maintenanceMode) {
-            String inputKey = loginRequest.get("secretKey");
-            if (inputKey == null || !inputKey.equals(maintenanceKey)) {
-                return ResponseEntity.status(403).body(Collections.singletonMap("message", "系统正在维护中..."));
-            }
+        String inputKey = loginRequest.get("secretKey");
+        if (maintenanceKey != null && !maintenanceKey.isEmpty()) {
+             if (inputKey == null || !inputKey.equals(maintenanceKey)) {
+                 return ResponseEntity.status(403).body(Collections.singletonMap("message", "当前系统正在维护中，请输入正确的测试密钥！"));
+             }
         }
 
         String phone = loginRequest.get("phone");
@@ -68,49 +68,71 @@ public class TeacherController {
             return ResponseEntity.status(401).body(Collections.singletonMap("message", "账号或密码错误"));
         }
 
-        // 4. 验证密码 (找到匹配的一条)
-        Teacher matched = null;
+        // 4. 验证密码
+        boolean passwordCorrect = false;
         for (Teacher t : teachers) {
             if (t.getPassword() != null && t.getPassword().equals(password)) {
-                matched = t;
+                passwordCorrect = true;
                 break;
             }
         }
         
-        if (matched == null) {
+        if (!passwordCorrect) {
             return ResponseEntity.status(401).body(Collections.singletonMap("message", "账号或密码错误"));
         }
 
-        // ================== 🔥 核心修改：只拼链接，不生成文件 ==================
+        // ================== 🔥 核心修复：添加第 9 期的判断逻辑 🔥 ==================
         
-        // A. 获取身份证 (对应文件名中的 ID)
-        String idCard = matched.getIdCard();
+        List<Map<String, Object>> resultList = new java.util.ArrayList<>();
 
-        // B. 处理期数 (数据库存的是"第七期"，OSS文件名用的是"7")
-        // 逻辑：如果包含 "8" 则是第8期，否则默认第7期 (根据你的实际情况调整)
-        String batch = "7"; 
-        if (matched.getSessions() != null) {
-             if (matched.getSessions().contains("8")) {
-                 batch = "8";
-             } else if (matched.getSessions().contains("7")) {
-                 batch = "7";
-             }
+        for (Teacher t : teachers) {
+            Map<String, Object> item = new HashMap<>();
+            // 复制基础属性
+            item.put("id", t.getId());
+            item.put("name", t.getName());
+            item.put("phone", t.getPhone());
+            item.put("idCard", t.getIdCard());
+            item.put("category", t.getCategory());
+            item.put("score", t.getScore());
+            item.put("certificateNo", t.getCertificateNo());
+            item.put("level", t.getLevel());
+            item.put("sessions", t.getSessions());
+
+            // 🔥🔥🔥 升级后的 Batch 判断逻辑 🔥🔥🔥
+            String batch = "7"; // 默认兜底是 7
+            String sessions = t.getSessions();
+            
+            if (sessions != null) {
+                // 必须处理乱码或中文情况，同时匹配 "9" 和 "九"
+                if (sessions.contains("9") || sessions.contains("九")) {
+                    batch = "9";
+                } else if (sessions.contains("8") || sessions.contains("八")) {
+                    batch = "8";
+                } else if (sessions.contains("7") || sessions.contains("七")) {
+                    batch = "7";
+                }
+            }
+            
+            // 调试日志 (可选，上线可删)
+            System.out.println("Processing ID: " + t.getId() + " | Session Raw: " + sessions + " | Result Batch: " + batch);
+
+            // 拼接链接
+            String idCard = t.getIdCard();
+            String imgUrl = OSS_BASE_URL + "preview/" + batch + "_" + idCard + "_img.png";
+            String pdfUrl = OSS_BASE_URL + "certs/" + batch + "_" + idCard + "_pdf.pdf";
+
+            item.put("imgUrl", imgUrl);
+            item.put("pdfUrl", pdfUrl);
+
+            resultList.add(item);
         }
-
-        // C. 拼接 OSS 永久链接
-        // 规则: 根路径 + 目录 + 批次_身份证_后缀
-        String imgUrl = OSS_BASE_URL + "preview/" + batch + "_" + idCard + "_img.png";
-        String pdfUrl = OSS_BASE_URL + "certs/" + batch + "_" + idCard + "_pdf.pdf";
 
         // ===================================================================
 
-        // 5. 返回结果
         Map<String, Object> resp = new HashMap<>();
         resp.put("code", 200);
         resp.put("msg", "登录成功");
-        resp.put("user", matched);
-        resp.put("imgUrl", imgUrl); // 前端直接展示
-        resp.put("pdfUrl", pdfUrl); // 前端直接下载
+        resp.put("userList", resultList); 
 
         return ResponseEntity.ok(resp);
     }
